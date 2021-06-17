@@ -1,0 +1,784 @@
+---
+title: "Final Project"
+author: "Meno Triono"
+date: "6/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Libraries
+```{r}
+library(tidyverse)
+library(tidyr)
+library(MASS)
+library(missForest)
+library(mice)
+library(VIM)
+library(data.table)
+library(reshape)
+library(GGally)
+library(gender)
+library(readr)
+library(plotly)
+library(ggplot2)
+library(RColorBrewer)
+library(stringr)
+library(DT)
+library(ROSE)
+library(fastDummies)
+library(clusterSim)
+library(caret)
+library(Hmisc)
+library(lattice)
+library(survival)
+library(Formula)
+library(psych)
+library(factoextra)
+library(modelr)
+library(corrplot)
+library(dplyr)
+library(pscl)
+library(ROCR)
+```
+
+## Getting Data
+```{r}
+#read csv file
+mydata <- read.csv("Video_Games_Sales.csv") #import dataset
+class(mydata) #class of dataset
+dim(mydata) #dim of dataset
+summary(mydata) #Summary of dataset
+mydata$Year_of_Release <- as.numeric(as.character(mydata$Year_of_Release)) #Transform Variabels
+mydata$User_Score <- as.numeric(as.character(mydata$User_Score)) #Transform Variabels
+mydata[mydata==""] <-NA #replace missing value with NA
+mydata$Genre <- as.character(mydata$Genre) #Transform Variabels
+mydata$Genre[mydata$Genre=="Role-Playing"] <-"RolePlaying" #replacing data name 
+mydata <- mydata %>% filter(mydata$Year_of_Release<=2016) #stoping dataset to year 2016
+mydata <- mydata%>% arrange(desc(Year_of_Release))#sort dataset by year of release
+glimpse(mydata)#glimpse of dataset
+```
+## Descriptive analysis
+```{r}
+#The goal here is to gain some intuitions of the magnitude of video game sales and its evolution throughout the period of time covered by the data set.
+
+#The following three graphs present the number of games released in each year, the total units sold of games released in each year and the average units sold per game of games released in each year.
+
+ggplot(mydata, aes(x = Year_of_Release)) +
+        geom_density(alpha = .5, fill = "antiquewhite3")#VIsualization dataset year of release
+
+Sales_NA <- mydata%>% select(Year_of_Release,NA_Sales) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_NA_Sales=sum(NA_Sales)) #create single specific column to new data
+Sales_EU <- mydata%>% select(Year_of_Release,EU_Sales) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_EU_Sales=sum(EU_Sales)) #create single specific column to new data
+Sales_JP <- mydata%>% select(Year_of_Release,JP_Sales) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_JP_Sales=sum(JP_Sales)) #create single specific column to new data
+Sales_OH <- mydata%>% select(Year_of_Release,Other_Sales) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_OH_Sales=sum(Other_Sales)) #create single specific column to new data
+
+Sales_evo <- Reduce(function(x,y) merge(x,y,all=TRUE,by="Year_of_Release"),list(Sales_NA,Sales_EU,Sales_JP,Sales_OH)) #mergering data by specific column
+
+plot_ly(data=Sales_evo,x=~Year_of_Release)%>%
+  add_trace(y=~Sum_NA_Sales,name="North America Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_EU_Sales,name="Europe Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_JP_Sales,name="Japan Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_OH_Sales,name="Other Sales",mode="lines",type = 'scatter') %>%
+  layout(title = "Total sales by year of release and by region",
+  yaxis = list(title="Sales (in millions of units)")) #COmparing Sales by each region using plotly
+```
+```{r}
+mydata2 <- fastDummies::dummy_cols(mydata, select_columns = "Genre") #Transform Variabels using fast dummies
+
+Action <- mydata2%>% select(Year_of_Release,Genre_Action) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_Genre_Action=sum(Genre_Action)) #create single specific column to new data
+Adventure <- mydata2%>% select(Year_of_Release,Genre_Adventure) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_Genre_Adventure=sum(Genre_Adventure)) #create single specific column to new data
+Fighting <- mydata2%>% select(Year_of_Release,Genre_Fighting) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_Genre_Fighting=sum(Genre_Fighting)) #create single specific column to new data
+Misc <- mydata2%>% select(Year_of_Release,Genre_Misc) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_Genre_Misc=sum(Genre_Misc)) #create single specific column to new data
+Platform <- mydata2%>% select(Year_of_Release,Genre_Platform) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_Genre_Platform=sum(Genre_Platform)) #create single specific column to new data
+Puzzle <- mydata2%>% select(Year_of_Release,Genre_Puzzle) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_Genre_Puzzle=sum(Genre_Puzzle)) #create single specific column to new data
+Racing <- mydata2%>% select(Year_of_Release,Genre_Racing) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_Genre_Racing=sum(Genre_Racing)) #create single specific column to new data
+RolePlay <- mydata2%>% select(Year_of_Release,Genre_RolePlaying) %>%
+  group_by(Year_of_Release)%>%  
+  summarise(Sum_Genre_RolePlaying=sum(Genre_RolePlaying)) #create single specific column to new data
+Shooter <- mydata2%>% select(Year_of_Release,Genre_Shooter) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_Genre_Shooter=sum(Genre_Shooter)) #create single specific column to new data
+Simulation <- mydata2%>% select(Year_of_Release,Genre_Simulation) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_Genre_Simulation=sum(Genre_Simulation)) #create single specific column to new data
+Sports <- mydata2%>% select(Year_of_Release,Genre_Sports) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_Genre_Sports=sum(Genre_Sports)) #create single specific column to new data
+Strategy <- mydata2%>% select(Year_of_Release,Genre_Strategy) %>%
+  group_by(Year_of_Release)%>% 
+  summarise(Sum_Genre_Strategy=sum(Genre_Strategy)) #create single specific column to new data
+
+Genre_evo <- Reduce(function(x,y) merge(x,y,all=TRUE,by="Year_of_Release"),list(Action,Adventure,Fighting,Misc,Platform,Puzzle,Racing,RolePlay,Shooter,Simulation,Sports,Strategy)) #mergering data by specific column
+
+plot_ly(data=Genre_evo,x=~Year_of_Release)%>%
+  add_trace(y=~Sum_Genre_Action,name="Action Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_Genre_Adventure,name="Adventure Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_Genre_Fighting,name="Fighting Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_Genre_Misc,name="Misc Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_Genre_Platform,name="Platform Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_Genre_Puzzle,name="Puzzle Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_Genre_Racing,name="Racing Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_Genre_RolePlaying,name="RolePlay Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_Genre_Shooter,name="Shooter Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_Genre_Simulation,name="Simulation Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_Genre_Sports,name="Sports Sales",mode="lines",type = 'scatter') %>%
+  add_trace(y=~Sum_Genre_Strategy,name="Strategy Sales",mode="lines",type = 'scatter') %>%
+  layout(title = "Total sales by year of release and by games genre",
+  yaxis = list(title="Sales")) #comparing video games sales by games genre
+```
+
+
+
+```{r}
+#From Figure 1, we can see that the number of games released reached its peak at around 2008-2009. This peak also corresponds to a peak in the total units of games sold as shown in Figure 2. However, in terms of the average units sold per game, we do not observe any particular increase during this period in Figure 3. In fact, the average units sold per game has greatly declined from 1980s to 1990s. This is probably due to the increased competition in the market. This number became more stable in the 2000s before experiencing a slight decrease again starting from 2013.
+
+#The finding that the average units sold per game is not stationnary throughout the period covered has some implications on predictive modelling that will be discussed in the following paragraph.
+
+#The following graph presents the percentage of the total sales by year of release that different game platforms shared. Game platforms are represented by colors from different palettes according to their vendor. I took the platform-vendor definition from Leonard’s analysis. Microsoft platforms are colored in greys, Nintendo in blues, Sega in oranges, Sony in greens, other platforms (including PC) are colored in purples.
+
+nintendoplatforms = c("3DS","DS","GB","GBA","N64","GC", "NES","SNES","Wii","WiiU") #create single specific column to new data
+sonyplatforms = c("PS","PS2","PSP","PS3","PS4","PSV") #create single specific column to new data
+segaplatforms = c("GEN","SCD","DC","GG","SAT") #create single specific column to new data
+msplatforms = c("XB","X360", "XOne") #create single specific column to new data
+otherplatforms = c("2600","3DO","NG","PCFX","TG16","WS") #create single specific column to new data
+pc= c('PC') #create single specific column to new data
+
+mydata$Platformvendor[mydata$Platform %in% nintendoplatforms] <- "Nintendo" #Create new column on main dataset
+mydata$Platformvendor[mydata$Platform %in% sonyplatforms] <- "Sony" #Create new column on main dataset
+mydata$Platformvendor[mydata$Platform %in% msplatforms] <- "Microsoft" #Create new column on main dataset
+mydata$Platformvendor[mydata$Platform %in% segaplatforms] <- "Sega" #Create new column on main dataset
+mydata$Platformvendor[mydata$Platform %in% pc] <- "PC" #Create new column on main dataset
+mydata$Platformvendor[mydata$Platform %in% otherplatforms] <- "Other" #Create new column on main dataset
+
+Platform_level <- mydata%>% group_by(Platform)%>% #create single specific column to new data
+  summarise(Sales = sum(Global_Sales))
+
+Platform_level<- left_join(Platform_level,mydata[,c("Platformvendor","Platform")]) #data platform manipulating with lef join
+Platform_level<- unique(Platform_level) #eliminate or delete the duplicate values or the rows present in the vector
+Platform_level<- Platform_level%>% arrange(Platformvendor,Sales) #osrt platform by sales
+Platform_level$Platform <-factor(Platform_level$Platform , levels = Platform_level$Platform) #another new column on new dataset
+
+Platform_level$color <- c(brewer.pal(3,'Greys'),
+                          brewer.pal(9,'Blues'),"#000000",
+                          brewer.pal(7,'Purples'),
+                          brewer.pal(5,'Oranges'),
+                          brewer.pal(6,'Greens')) #coloring data
+                          
+N_platform <-mydata%>%group_by(Platform,Year_of_Release) %>% 
+  summarise(Sales=sum(Global_Sales)) #create single specific column to new data
+
+N_platform<- N_platform%>%group_by(Year_of_Release)%>% 
+  mutate(YearTotal = sum(Sales),Percent = Sales/YearTotal) #modify single specific column to new data
+N_platform$Platform <-factor(N_platform$Platform , levels = Platform_level$Platform)
+
+plot_ly(N_platform,x=~Year_of_Release,y=~Percent,
+          color=~Platform,colors=Platform_level$color,
+          hoverinfo='text',type='bar',
+          text=~paste('Year : ', Year_of_Release,'<br>',
+                      'Platform : ',Platform,'<br>',
+                      'Sales (in millions of units): ', Sales,'<br>',
+                      'Percentage in total game sales: ',round(Percent,2)*100,'%'))%>%
+    layout(barmode='stack',
+    title='Percentage of game platforms in total sales by year of release') #Visualization platform sales using plotly
+```
+
+## Exploratory Data Analisys
+```{r}
+#Top Global Sales
+mydata %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ggplot(aes(x = Global_Sales, y = reorder(Name, Global_Sales))) +
+geom_point(size = 4, color = "darkblue") +
+theme(axis.text.y=element_text(size=14, colour="Black"),
+      axis.text.x=element_text(size=14)) +
+labs(x=NULL, y=NULL, title= "Top 10 Global Sales") #Visualization Top Global Sales using ggplot
+```
+
+```{r}
+#Top 10 North American Sales
+mydata %>%
+arrange(desc(NA_Sales)) %>%
+head(n=10) %>%
+ggplot(aes(x = NA_Sales, y = reorder(Name, NA_Sales))) +
+geom_point(size = 3, color = "darkblue") +
+theme(axis.text.y=element_text(size=14, colour="black"),
+      axis.text.x=element_text(size=14)) +
+labs(x=NULL, y=NULL, title= "Top 10 North America Sales")#Visualization Top 10 North American Sales
+```
+
+```{r}
+#Top 10 Japan Sales
+mydata %>%
+arrange(desc(JP_Sales)) %>%
+head(n=10) %>%
+ggplot(aes(x = JP_Sales, y = reorder(Name, JP_Sales))) +
+geom_point(size = 3, color = "darkblue") +
+theme(axis.text.y=element_text(size=14, colour="black"),
+      axis.text.x=element_text(size=14)) +
+labs(x=NULL, y=NULL, title= "Top 10 Japan Sales")#Visualization Top 10 Japan Sales
+```
+
+```{r}
+#Top 10 Europe Sales
+mydata %>%
+arrange(desc(EU_Sales)) %>%
+head(n=10) %>%
+ggplot(aes(x = EU_Sales, y = reorder(Name, EU_Sales))) +
+geom_point(size = 3, color = "darkblue") +
+theme(axis.text.y=element_text(size=14, colour="black"),
+      axis.text.x=element_text(size=14)) +
+labs(x=NULL, y=NULL, title= "Top 10 Europe Sales")#Visualization Top 10 Europe Sales
+```
+```{r}
+#Top 10 Other Region Sales
+mydata %>%
+arrange(desc(Other_Sales)) %>%
+head(n=10) %>%
+ggplot(aes(x = Other_Sales, y = reorder(Name, Other_Sales))) +
+geom_point(size = 3, color = "darkblue") +
+theme(axis.text.y=element_text(size=14, colour="black"),
+      axis.text.x=element_text(size=14)) +
+labs(x=NULL, y=NULL, title= "Top 10 Other Region Sales")#Visualization Top 10 Other Region Sales
+```
+```{r}
+#TOP 10 Sony PlayStation Sales
+mydata %>%
+filter(Platform %in% c("PS","PS2","PS3","PS4")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING SONY PLAYSTATION") #Visualization TOP 10 Sony PlayStation Sales
+```
+```{r}
+#Top 10 Nintendo Games
+mydata %>%
+filter(Platform %in% c("NES","SNES","N64","GC" , "Wii" ,"WiiU")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING NINTENDO GAMES")#Visualization Top 10 Nintendo Games
+```
+```{r}
+#Top 10 Microsoft Games
+mydata %>%
+filter(Platform %in% c("XB","X360","XOne")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING MICROSOFT GAMES") #Visualization Top 10 Microsoft Games
+```
+```{r}
+#Top 10 PC Games
+mydata %>%
+filter(Platform %in% c("PC")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING PC GAMES") #Visualization Top 10 PC Games
+```
+```{r}
+#Top 10 Sports Games
+mydata %>%
+filter(Genre %in% c("Sports")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING SPORT GAMES")#Visualization Top 10 Sports Games
+```
+```{r}
+#Top 10 Action Games
+mydata %>%
+filter(Genre %in% c("Action")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING ACTION GAMES")#Visualization Top 10 Action Games
+```
+```{r}
+#Top 10 Shooter Games
+mydata %>%
+filter(Genre %in% c("Shooter")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING SHOOTER GAMES")#Visualization Top 10 Shooter Games
+```
+```{r}
+#Top 10 Fighting Games
+mydata %>%
+filter(Genre %in% c("Fighting")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING FIGHTING GAMES")#VIsualization Top 10 Fighting Games
+```
+```{r}
+#Top 10 RolePlaying Games
+mydata %>%
+filter(Genre %in% c("RolePlaying")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING ROLE PLAYING GAMES")#Visualization Top 10 RolePlaying Games
+```
+```{r}
+#Top 10 Racing Games
+mydata %>%
+filter(Genre %in% c("Racing")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING RACING GAMES")#Visualization Top 10 Racing Games
+```
+```{r}
+#Top 10 Simulation Games
+mydata %>%
+filter(Genre %in% c("Simulation")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING SIMULATION GAMES") #Visualization Top 10 Simulation Games
+```
+```{r}
+#Top 10 Adventure Games
+mydata %>%
+filter(Genre %in% c("Adventure")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING ADVENTURE GAMES")#Visualization Top 10 Adventure Games
+```
+
+```{r}
+#Top 10 Platform Games
+mydata %>%
+filter(Genre %in% c("Platform")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING PLATFORM GAMES")#Visualization Top 10 Platform Games
+```
+```{r}
+#Top 10 Strategy Games
+mydata %>%
+filter(Genre %in% c("Strategy")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING STRATEGY GAMES") #Visualization Top 10 Strategy Games
+```
+```{r}
+#Top 10 Misc Games
+mydata %>%
+filter(Genre %in% c("Misc")) %>%
+arrange(desc(Global_Sales)) %>%
+head(n=10) %>%
+ ggplot(aes(x = reorder(Name, -Global_Sales),
+             y = Global_Sales, fill= Name)) +
+  geom_col() +
+ theme(axis.text.x = element_blank(),
+       axis.text.y = element_text(size = 14)) +
+labs(x=NULL, y=NULL, title="BEST SELLING MISC GAMES")#Visualization Top 10 Misc Games
+```
+## Missing Data
+```{r}
+#Detect missing value
+any(is.na(mydata))
+na.omit(mydata)
+#Generate 10% missing values at Random
+mydata.mis <- prodNA(mydata, noNA = 0.1)
+#Check missing values introduced in the data
+summary(mydata.mis)
+# Removing categorical data
+p = function(x){sum(is.na(x))/length(x)*100}
+apply(mydata,2,p)
+#EU_Sales, Global_Sales, Platform, Publisher, JP_Sales, Year_of_Release, NA_Sales, Other_Sales, and Developer contains no missing values, Name contains 0,0122%, Genre contains 0,0122%, Critic_Score contains 51,45%, Critic_Count 51,45%, User_Score 54,62%, User_Count contains 54,62%, Developer 39,77%, and Rating with 40,60%.
+md.pattern(mydata)#Visualization Missing data
+```
+```{r}
+md.pairs(mydata)
+#rr indicates how many data points are observed
+#rm indicates Observed and Missing
+#mr indicates Missing versus observed
+#mm indicates Missing versus Missing
+```
+```{r}
+marginplot(mydata[,c('Critic_Score', 'User_Count')])
+#Blue values are observed values and red ones are missing values.
+```
+## Impute
+```{r}
+impute <- mice(mydata, m=3, seed = 123)
+print(impute)
+impute$imp$Critic_Score
+#variable fm contains no missing values and hence no method applied.
+#For the variable Critic_Score, User_Count and Critic_Count use “pmm” method used.
+#pmm stands for predictive Mean Matching.
+#polyreg used for factor variables, polyreg stands for multinomial logistic regression.
+mydata[20,]
+```
+## Complete data
+```{r}
+newdata <- complete(impute, 1)
+summary(newdata)
+newdata
+any(is.na(newdata))
+xyplot(impute, Critic_Score ~ Critic_Count | .imp, pch = 20, cex=1.4)
+#First, one is original observations and followed by impute1, 2, and 3. You can see there are no changes after imputing the observations.
+```
+## Data Modeling
+```{r}
+#Exclude Developer and Rating
+modeldata = subset(newdata, select =c("Name","Platform","Year_of_Release","Genre","Publisher","NA_Sales","EU_Sales","JP_Sales","Other_Sales","Global_Sales","Critic_Score","Critic_Count","User_Score","User_Count","Platformvendor"))
+
+#Quantile
+quantile(modeldata$Global_Sales)
+quantile(modeldata$Global_Sales, 0.25)
+quantile(modeldata$Global_Sales, 0.5)
+quantile(modeldata$Global_Sales, 0.75)
+quantile(modeldata$Global_Sales, prob = seq(0, 1, length 
+                                       = 11), type = 5)
+quantile(modeldata$Global_Sales, prob = seq(0, 1, length 
+                                       = 101), type = 5)
+quantile(modeldata$Global_Sales, prob = c(0.15, 0.25, 
+                                     0.35))
+modeldata$Global_Sales_Fix <- ifelse(modeldata$Global_Sales > 0.60,0.60,ifelse(modeldata$Global_Sales < 0.09,0.09, modeldata$Global_Sales))
+
+quantile(modeldata$Critic_Score)
+quantile(modeldata$Critic_Score, 0.25)
+quantile(modeldata$Critic_Score, 0.5)
+quantile(modeldata$Critic_Score, 0.75)
+quantile(modeldata$Critic_Score, prob = seq(0, 1, length 
+                                       = 11), type = 5)
+quantile(modeldata$Critic_Score, prob = seq(0, 1, length 
+                                       = 101), type = 5)
+quantile(modeldata$Critic_Score, prob = c(0.15, 0.25, 
+                                     0.35))
+modeldata$Critic_Score_Fix <- ifelse(modeldata$Critic_Score > 94,94,ifelse(modeldata$Critic_Score < 30,30, modeldata$Critic_Score))
+
+quantile(modeldata$Critic_Count)
+quantile(modeldata$Critic_Count, 0.25)
+quantile(modeldata$Critic_Count, 0.5)
+quantile(modeldata$Critic_Count, 0.75)
+quantile(modeldata$Critic_Count, prob = seq(0, 1, length 
+                                       = 11), type = 5)
+quantile(modeldata$Critic_Count, prob = seq(0, 1, length 
+                                       = 101), type = 5)
+quantile(modeldata$Critic_Count, prob = c(0.15, 0.25, 
+                                     0.35))
+modeldata$Critic_Count_Fix <- ifelse(modeldata$Critic_Count > 83,83,ifelse(modeldata$Critic_Count < 2,2, modeldata$Critic_Count))
+
+quantile(modeldata$User_Count)
+quantile(modeldata$User_Count, 0.25)
+quantile(modeldata$User_Count, 0.5)
+quantile(modeldata$User_Count, 0.75)
+quantile(modeldata$User_Count, prob = seq(0, 1, length 
+                                       = 11), type = 5)
+quantile(modeldata$User_Count, prob = seq(0, 1, length 
+                                       = 101), type = 5)
+quantile(modeldata$User_Count, prob = c(0.15, 0.25, 
+                                     0.35))
+modeldata$User_Count_Fix <- ifelse(modeldata$User_Count > 117,117,ifelse(modeldata$User_Count < 4,4, modeldata$User_Count))
+
+
+quantile(modeldata$User_Score)
+quantile(modeldata$User_Score, 0.25)
+quantile(modeldata$User_Score, 0.5)
+quantile(modeldata$User_Score, 0.75)
+quantile(modeldata$User_Score, prob = seq(0, 1, length 
+                                       = 11), type = 5)
+quantile(modeldata$User_Score, prob = seq(0, 1, length 
+                                       = 101), type = 5)
+quantile(modeldata$User_Score, prob = c(0.15, 0.25, 
+                                     0.35))
+modeldata$User_Score_Fix <- ifelse(modeldata$User_Score > 9.2,9.2,ifelse(modeldata$User_Score < 2,2, modeldata$User_Score))
+
+#variance
+var(modeldata$Global_Sales_Fix)
+var(modeldata$Critic_Score_Fix)
+var(modeldata$Critic_Count_Fix)
+var(modeldata$User_Count_Fix)
+var(modeldata$User_Score_Fix)
+sd(modeldata$Global_Sales_Fix)
+sd(modeldata$Critic_Score_Fix)
+sd(modeldata$Critic_Count_Fix)
+sd(modeldata$User_Count_Fix)
+sd(modeldata$User_Score_Fix)
+
+
+df = subset(modeldata, select =c("Global_Sales_Fix","Critic_Score_Fix","Critic_Count_Fix","User_Score_Fix","User_Count_Fix"))
+pairs(df)
+cor(df)
+
+#Correlation of categorical variable
+chisq.test(df$Global_Sales,df$Critic_Score,df$Critic_Count,df$User_Score,df$User_Count)
+
+#Pearson correlation test
+#Correlation test between variables
+cor=cor(df[c("Global_Sales_Fix","Critic_Score_Fix","Critic_Count_Fix","User_Score_Fix","User_Count_Fix")]) #
+corrplot(cor, method = "number") #Visualization Correlation test between variables:
+```
+
+## Data Preparation
+```{r}
+#Data Preparation: Data Spliting
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(df), replace = T, prob = c(0.6,0.4))
+train <- df[sample, ]
+test <- df[!sample, ]
+```
+
+```{r}
+# Data Preparation: Data Standarization
+model1 <- lm(Global_Sales_Fix ~ Critic_Score_Fix + Critic_Count_Fix + User_Score_Fix + User_Count_Fix, data = train)
+train %>% ggplot(aes(x=Critic_Score_Fix,y=Global_Sales_Fix)) + geom_point() + geom_smooth()
+```
+
+```{r}
+#Assessing Coefficients
+glance(model1)
+tidy(model1)
+```
+```{r}
+#Computes confidence intervals for one or more parameters in a fitted model. There is a default and a method for objects inheriting from class "lm".
+#A matrix (or vector) with columns giving lower and upper confidence limits for each parameter. These will be labelled as (1-level)/2 and 1 - (1-level)/2 in % (by default 2.5% and 97.5%).
+confint(model1)
+```
+
+```{r}
+#Checking Statistical Significance
+(model1)
+summary(model1)
+##How good is the model?
+#Every model might have different measurement, in this case we can check three things:
+#1. Residual standard error
+#a. An RSE value of 0.005218 means the actual Global sales in Worldwide market will deviate from the true
+#regression line by approximately 3,200 units, on average
+#b. it is not always clear what constitutes a good RSE, only for added information.
+#2. R squared
+#a. Could be used to generally measure how good is your model
+#b. The result suggests that TV advertising budget can explain 64% of the variability in
+#our sales data. The Higher the better
+#3. F-statistic
+#a. the F-statistic tests to see if at least one predictor variable has a non-zero coefficient
+#b. Larger F-Statistic, will product a statsig p-value
+```
+## Making Predictions
+```{r}
+# Using our model to predict the output of our test set.
+(test <- test %>% add_predictions(model1))
+```
+## Checking how well the prediction is
+```{r}
+#Using Mean Square Error, we want the value between training and test MSE close to each other
+test %>%
+ add_predictions(model1) %>%
+ summarise(MSE = mean((Global_Sales_Fix - pred)^2))
+## # A tibble: 1 × 1
+## MSE
+## <dbl>
+## 1 0.03931382	
+
+
+train %>%
+ add_predictions(model1) %>%
+ summarise(MSE = mean((Global_Sales_Fix - pred)^2))
+## # A tibble: 1 × 1
+## MSE
+## <dbl>
+## 1 0.03783859		
+
+```
+## Model Building
+```{r}
+model2 <- lm(Global_Sales_Fix ~ Critic_Score_Fix + Critic_Count_Fix + User_Count_Fix, data = train)
+summary(model2)
+```
+
+```{r}
+#Assessing Coefficients
+glance(model2)
+tidy(model2)
+```
+
+```{r}
+#Assessing Coefficients
+glance(model2)
+tidy(model2)
+```
+```{r}
+#Computes confidence intervals for one or more parameters in a fitted model. There is a default and a method for objects inheriting from class "lm".
+#A matrix (or vector) with columns giving lower and upper confidence limits for each parameter. These will be labelled as (1-level)/2 and 1 - (1-level)/2 in % (by default 2.5% and 97.5%).
+confint(model2)
+```
+
+```{r}
+#Comparizon model using Rsquared
+list(model1 = broom::glance(model1), model2 = broom::glance(model2))
+```
+```{r}
+#Comparizon model using MSE
+test %>%
+ gather_predictions(model1, model2) %>%
+ group_by(model) %>%
+ summarise(MSE = mean((Global_Sales_Fix-pred)^2))
+```
+
+```{r}
+plot(model2)
+plot(model1)
+```
+## Model Building
+```{r}
+model3 <- lm(Global_Sales_Fix ~ Critic_Score_Fix + Critic_Count_Fix, data = train)
+summary(model3)
+```
+
+```{r}
+#Assessing Coefficients
+glance(model3)
+tidy(model3)
+```
+
+```{r}
+#Computes confidence intervals for one or more parameters in a fitted model. There is a default and a method for objects inheriting from class "lm".
+#A matrix (or vector) with columns giving lower and upper confidence limits for each parameter. These will be labelled as (1-level)/2 and 1 - (1-level)/2 in % (by default 2.5% and 97.5%).
+confint(model3)
+```
+
+```{r}
+#Comparizon model using Rsquared
+list(model1 = broom::glance(model1), model2 = broom::glance(model2), model3 = broom::glance(model3))
+```
+```{r}
+#Comparizon model using MSE
+test %>%
+ gather_predictions(model1, model2, model3) %>%
+ group_by(model) %>%
+ summarise(MSE = mean((Global_Sales_Fix-pred)^2))
+```
+
+```{r}
+plot(model1)
+plot(model2)
+plot(model3)
+```
+
+## Model Building
+```{r}
+model4 <- lm(Global_Sales_Fix ~ Critic_Score_Fix, data = train)
+summary(model4)
+```
+
+```{r}
+#Assessing Coefficients
+glance(model4)
+tidy(model4)
+```
+
+```{r}
+#Computes confidence intervals for one or more parameters in a fitted model. There is a default and a method for objects inheriting from class "lm".
+#A matrix (or vector) with columns giving lower and upper confidence limits for each parameter. These will be labelled as (1-level)/2 and 1 - (1-level)/2 in % (by default 2.5% and 97.5%).
+confint(model4)
+```
+
+```{r}
+#Comparizon model using Rsquared
+list(model1 = broom::glance(model1), model2 = broom::glance(model2), model3 = broom::glance(model3), model4 = broom::glance(model4))
+```
+
+```{r}
+#Comparizon model using MSE
+test %>%
+ gather_predictions(model1, model2, model3, model4) %>%
+ group_by(model) %>%
+ summarise(MSE = mean((Global_Sales_Fix-pred)^2))
+```
+
+```{r}
+plot(model1)
+plot(model2)
+plot(model3)
+plot(model4)
+```
